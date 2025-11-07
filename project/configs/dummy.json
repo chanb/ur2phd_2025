@@ -1,0 +1,31 @@
+{
+    "logging_config": {
+        "save_path": "./logs",
+        "experiment_name": "debug",
+        "log_interval": 10,
+        "checkpoint_interval": 100,
+        "validation_interval": 10
+    },
+    "model_config": {
+        "architecture": "DummyModel",
+        "kwargs": {}
+    },
+    "optimizer_config": {
+        "optimizer": "Adam",
+        "kwargs": {
+            "lr": 3e-4
+        }
+    },
+    "dataset_config": {
+        "train": {
+            "dataset_name": "DummyDataset",
+            "kwargs": {},
+            "num_workers": 1,
+            "batch_size": 32,
+        }
+    },
+    "learner": "NextTokenLearner",
+    "train_loss_config": {},
+    "num_epochs": 1000,
+    "seed": 0
+}

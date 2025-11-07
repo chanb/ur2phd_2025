@@ -1,0 +1,18 @@
+CONST_CPU = "cpu"
+CONST_GPU = "gpu"
+
+CONST_BATCH_STATS = "batch_stats"
+CONST_EVAL = "eval"
+CONST_HYPERPARAMS = "hyperparams"
+CONST_HYPERPARAMETERS = "hyperparameters"
+CONST_INTERMEDIATES = "intermediates"
+CONST_LEARNING_RATE = "learning_rate"
+CONST_MODEL = "model"
+CONST_MODEL_DICT = "model_dict"
+CONST_OPT_STATE = "opt_state"
+CONST_OPTIMIZER = "optimizer"
+CONST_MODEL_STATE = "model_state"
+CONST_AGG_LOSS = "agg_loss"
+
+CONST_SAMPLE_TIME = "sample_time"
+CONST_UPDATE_TIME = "update_time"
