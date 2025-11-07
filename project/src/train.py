@@ -6,9 +6,8 @@ currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentfram
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
-import dill
 import math
-import numpy as np
+import torch
 import tqdm
 
 from torch.utils.tensorboard import SummaryWriter
@@ -17,7 +16,7 @@ from types import SimpleNamespace
 import src.learners as learners
 
 from src.constants import *
-from src.utils import DummySummaryWriter, EmptyDatasetError
+from src.utils import DummySummaryWriter
 
 
 def train(
@@ -58,12 +57,9 @@ def train(
                 CONST_HYPERPARAMETERS,
                 hyperparameter_str,
             )
-            dill.dump(
+            torch.save(
                 learner.state,
-                open(
-                    os.path.join(save_path, "models", "{}.dill".format(pad_string(0))),
-                    "wb",
-                ),
+                os.path.join(save_path, "models", "{}.dill".format(pad_string(0))),
             )
 
             # Perform validation before any training
@@ -103,15 +99,12 @@ def train(
                 and logging_config.checkpoint_interval
                 and (true_epoch % logging_config.checkpoint_interval == 0)
             ):
-                dill.dump(
+                torch.save(
                     learner.state,
-                    open(
-                        os.path.join(
-                            save_path,
-                            "models",
-                            "{}.dill".format(pad_string(true_epoch)),
-                        ),
-                        "wb",
+                    os.path.join(
+                        save_path,
+                        "models",
+                        "{}.dill".format(pad_string(true_epoch)),
                     ),
                 )
     except KeyboardInterrupt:
@@ -119,15 +112,12 @@ def train(
 
     if learner:
         if save_path:
-            dill.dump(
+            torch.save(
                 learner.state,
-                open(
-                    os.path.join(
-                        save_path,
-                        "models",
-                        "{}.dill".format(pad_string(true_epoch)),
-                    ),
-                    "wb",
+                os.path.join(
+                    save_path,
+                    "models",
+                    "{}.dill".format(pad_string(true_epoch)),
                 ),
             )
 

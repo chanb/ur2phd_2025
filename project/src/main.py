@@ -53,7 +53,7 @@ def main(config_path: str):
 
     pprint(config)
 
-    set_seed(config.seeds.seed)
+    set_seed(config.seed)
     save_path = None
     if config.logging_config.save_path:
         optional_prefix = ""

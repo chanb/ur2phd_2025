@@ -22,7 +22,6 @@ import src.datasets as datasets
 import src.models as models
 
 from src.constants import *
-from src.utils import parse_dict
 
 
 class NextTokenLearner:
@@ -49,8 +48,9 @@ class NextTokenLearner:
 
         # Load pretrained model if specified
         if getattr(self.config, "pretrained_model_path", None):
-            state_dict = dill.load(
-                open(self.config.pretrained_model_path, "rb")
+            state_dict = torch.load(
+                self.config.pretrained_model_path,
+                map_location=self.device,
             )
             self.load_state_dict(state_dict)
 
@@ -95,15 +95,12 @@ class NextTokenLearner:
         Model states and optimizer states.
         """
         return {
-            CONST_MODEL_STATE: {
-                k: v.cpu()
-                for k, v in self.model.state_dict().items()
-            },
-            CONST_OPT_STATE: {
-                k: v.cpu()
-                for k, v in self.optimizer.state_dict().items()
-            },
+            CONST_MODEL_STATE: self.model.state_dict(),
+            CONST_OPT_STATE: self.optimizer.state_dict(),
         }
+    
+    def close(self):
+        del self._dataset, self._dataset_loader
 
     def load_state_dict(self, state_dict: Dict):
         """
@@ -112,14 +109,8 @@ class NextTokenLearner:
         :param state_dict: the state dictionary
         :type state_dict: Dict
         """
-        self.model.load_state_dict({
-            k: v.to(self.device)
-            for k, v in state_dict[CONST_MODEL_STATE].items()
-        })
-        self.optimizer.load_state_dict({
-            k: v.to(self.device)
-            for k, v in state_dict[CONST_OPT_STATE].items()
-        })
+        self.model.load_state_dict(state_dict[CONST_MODEL_STATE])
+        self.optimizer.load_state_dict(state_dict[CONST_OPT_STATE])
 
     def make_dataset_and_loader(
         self,
@@ -139,15 +130,15 @@ class NextTokenLearner:
             dataset_config.dataset_name,
         )
         dataset = dataset_class(
-            **parse_dict(dataset_config.kwargs),
+            **vars(dataset_config.kwargs),
         )
 
         dataset_loader = DataLoader(
             dataset=dataset,
             batch_size=dataset_config.batch_size,
-            shuffle=getattr(dataset_config.dataset_config, "shuffle", True),
-            drop_last=getattr(dataset_config.dataset_config, "drop_last", True),
-            num_workers=getattr(dataset_config.dataset_config, "num_workers", 0),
+            shuffle=getattr(dataset_config, "shuffle", True),
+            drop_last=getattr(dataset_config, "drop_last", True),
+            num_workers=getattr(dataset_config, "num_workers", 0),
         )
         return dataset, dataset_loader
 
@@ -160,7 +151,7 @@ class NextTokenLearner:
 
         """
         model_class = getattr(models, self.config.model_config.architecture)
-        model_kwargs = parse_dict(self.config.model_config.kwargs)
+        model_kwargs = vars(self.config.model_config.kwargs)
         model_kwargs.update(
             vocab_size=self.dataset.vocab_size
         )
@@ -171,7 +162,7 @@ class NextTokenLearner:
         optimizer_class = getattr(torch.optim, self.config.optimizer_config.optimizer)
         optimizer = optimizer_class(
             model.parameters(),
-            **parse_dict(self.config.optimizer_config.kwargs)
+            **vars(self.config.optimizer_config.kwargs)
         )
 
         return model.to(self.device), optimizer
@@ -186,7 +177,8 @@ class NextTokenLearner:
         :rtype: Any
 
         """
-        raise NotImplementedError
+        # TODO: Implement next-token prediction
+        return {CONST_AGG_LOSS: torch.tensor(0.0, device=self.device)}
 
     def update(self, epoch: int, *args, **kwargs) -> Dict[str, Any]:
         """

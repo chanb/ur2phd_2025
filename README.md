@@ -26,7 +26,6 @@ pip install jupyter==1.1.1
 pip install ipympl==0.9.4
 pip install tensorboard
 pip install tqdm
-pip install dill
 
 # To deactivate the virtual environment
 deactivate

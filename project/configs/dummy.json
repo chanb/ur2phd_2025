@@ -21,7 +21,7 @@
             "dataset_name": "DummyDataset",
             "kwargs": {},
             "num_workers": 1,
-            "batch_size": 32,
+            "batch_size": 32
         }
     },
     "learner": "NextTokenLearner",
