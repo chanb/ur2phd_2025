@@ -84,5 +84,5 @@ I have included some example Python files under `datasets`, `models`, and `learn
 - Likewise, a `Model` should be a `torch.nn.Module` that outputs a dictionary, containing at least: `output` when `forward` is called. Note that we're using a dictionary because if we want to compute the attention score, for example, we can include it here.
 - The `NextTokenLearner` is missing the `train_step`, `update`, and `validaion` methods---I have included docstring to describe each method.
 
-**NOTE 1:** You have full freedom to modify this codebase, so long as everyone is aware of the modification (do this through a Pull Request and we will review it).
+**NOTE 1:** You have full freedom to modify this codebase, so long as everyone is aware of the modification (do this through a Pull Request and we will review it).  
 **NOTE 2:** The choices of the model architecture, learning objective, datasets, and metrics are open to discussion---I suggest asking for forgiveness after (it usually works out).
