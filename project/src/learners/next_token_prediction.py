@@ -170,6 +170,7 @@ class NextTokenLearner:
     def train_step(self, batch: Dict[str, torch.Tensor]) -> Any:
         """
         A single training step.
+        The learner should update model parameters based on the sampled batch here.
 
         :param batch: the batch
         :type batch: Dict[str, torch.Tensor]
