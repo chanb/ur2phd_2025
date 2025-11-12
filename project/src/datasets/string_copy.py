@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 
-class StringCopyDataset(Dataset):
+class CopyDataset(Dataset):
     """
     A dataset representing the string copy task.
     Here, the goal is to repeat the input string.
