@@ -38,6 +38,7 @@ You have to install the two extra packages:
 ```
 pip install tensorboard
 pip install tqdm
+pip install ipdb # (Optional) I usually use this to debug my code
 ```
 
 ### Running the project
