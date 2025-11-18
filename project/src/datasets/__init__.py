@@ -6,4 +6,4 @@ currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentfram
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
-from src.datasets.dummy import DummyDataset
+from src.datasets.multiplication import MultiplicationDataset
