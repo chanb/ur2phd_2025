@@ -191,6 +191,7 @@ class NextTokenLearner:
         targets = batch["target"]  # (batch_size, seq_len)
         loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
 
+        # TODO: We should really ignore the questions for NTP loss computation.
         with torch.set_grad_enabled(train):
             output_dict = self.model(batch)
             preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
@@ -212,6 +213,7 @@ class NextTokenLearner:
             preds.argmax(dim=-1) == targets
         ).float().detach().cpu()
 
+        # TODO: We should include gradient norm for logging.
         return {
             CONST_AGG_LOSS: loss_mean.detach().cpu(),
             CONST_AGG_ACCURACY: acc.mean(),
