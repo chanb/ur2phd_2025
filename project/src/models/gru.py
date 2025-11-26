@@ -1,3 +1,6 @@
+import torch
+
+
 from torch import nn
 
 
@@ -37,7 +40,11 @@ class DecoderGRU(nn.Module):
         - batch["input"]: a tensor of shape (batch_size, seq_len)
         """
         embedded = self.embedding(batch["input"])  # (batch_size, seq_len, hidden_size)
-        rnn_out, _ = self.rnn(embedded)  # (batch_size, seq_len, hidden_size)
+        if "state" in batch:
+            rnn_out, rnn_state = self.rnn(embedded, batch["state"])
+        else:
+            rnn_out, rnn_state = self.rnn(embedded)  # (batch_size, seq_len, hidden_size)
+
         hidden = self.hidden_1(rnn_out)
         hidden = nn.functional.relu(hidden)
         hidden = self.dropout(hidden)
@@ -48,4 +55,20 @@ class DecoderGRU(nn.Module):
 
         return {
             "output": output_logits,
+            "state": rnn_state,
         }
+
+    def init_state(self, batch):
+        """
+        Initializes the hidden state of the GRU.
+
+        Expects batch to include:
+        - batch["input"]: a tensor of shape (batch_size, seq_len)
+        """
+        batch_size = batch["input"].size(0)
+        return torch.zeros(
+            self.num_gru_layers,
+            batch_size,
+            self.hidden_size,
+            device=batch["input"].device,
+        )

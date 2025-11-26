@@ -63,6 +63,7 @@ class CopyDataset(Dataset):
 
         instance = self.instance_idxes[idx]
         bin_repr = "{0:b}".format(instance)
+        question_len = len(bin_repr)
         list_repr = [int(token) for token in bin_repr]
         list_repr = list_repr + [2] + list_repr
         eos_pads = [3] * (2 * (self.max_question_len + 1) - len(list_repr))
@@ -71,7 +72,13 @@ class CopyDataset(Dataset):
         return {
             "input": torch.tensor(list_repr[:-1]),
             "target": torch.tensor(list_repr[1:]),
+            "question_len": torch.tensor(question_len, dtype=torch.long),
+            "answer_len": torch.tensor(question_len, dtype=torch.long),
         }
+
+    @property
+    def eos_token(self) -> Any:
+        return 3
 
     @property
     def vocab_size(self) -> Any:

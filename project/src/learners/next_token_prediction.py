@@ -49,6 +49,7 @@ class NextTokenLearner:
                 self._val_data[val_config.name] = {
                     "dataset": curr_val_dataset,
                     "loader": curr_val_dataset_loader,
+                    "max_decode_len": getattr(val_config, "max_decode_len", None),
                 }
 
         self._model, self._optimizer = self.make_model_and_optimizer()
@@ -187,18 +188,19 @@ class NextTokenLearner:
         :rtype: Any
 
         """
-        with torch.set_grad_enabled(train):
-            output_dict = self.model(batch)
-        preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
         targets = batch["target"]  # (batch_size, seq_len)
         loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
-        loss = loss_fn(
-            preds.view(-1, self.dataset.vocab_size),
-            targets.view(-1),
-        )
 
-        loss = loss.view(targets.shape)  # (batch_size, seq_len)
-        loss_mean = loss.mean()
+        with torch.set_grad_enabled(train):
+            output_dict = self.model(batch)
+            preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
+            loss = loss_fn(
+                preds.view(-1, self.dataset.vocab_size),
+                targets.view(-1),
+            )
+
+            loss = loss.view(targets.shape)  # (batch_size, seq_len)
+            loss_mean = loss.mean()
 
         if train:
             # Take gradient step
@@ -277,6 +279,95 @@ class NextTokenLearner:
         }
         return log
 
+    def rollout(
+        self,
+        batch: Dict[str, torch.Tensor],
+        max_length: int,
+        eos_token: int,
+        greedy_decoding: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Perform autoregressive prediction upon receiving the question.
+
+        :param batch: the batch
+        :param max_length: the maximum length to decode
+        :param greedy_decoding: whether to use greedy decoding
+        :type batch: Dict[str, torch.Tensor]
+        :type max_length: int
+        :type greedy_decoding: bool
+        :return: the auxiliary information
+        :rtype: Dict[str, Any]
+        """
+
+        with torch.no_grad():
+            curr_state = self.model.init_state(batch)
+            curr_input = batch["input"][:, [0]]
+
+            dones = torch.zeros(
+                curr_input.size(0),
+                dtype=torch.bool,
+                device=self.device,
+            )
+            outputs = [dones.unsqueeze(1).cpu()]
+            max_prompt_length = batch["input"].size(1) - 1
+            for step_i in range(max_length):
+                output_dict = self.model({
+                    "input": curr_input,
+                    "state": curr_state,
+                })
+                preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
+
+                if greedy_decoding:
+                    next_token = preds[:, -1, :].argmax(dim=-1)  # (batch_size,)
+                else:
+                    raise ValueError("Only greedy decoding is supported currently.")
+
+                # Set next token to the ground truth if still in question part
+                next_token = torch.where(
+                    step_i + 1 < batch["question_len"],
+                    batch["input"][:, min(step_i + 1, max_prompt_length)],
+                    next_token,
+                )
+
+                dones = torch.logical_or(
+                    dones,
+                    next_token == eos_token,
+                )
+
+                next_token = torch.where(
+                    dones,
+                    torch.full_like(next_token, eos_token),
+                    next_token,
+                )
+
+                # Prepare for next step
+                curr_input = next_token.unsqueeze(1)  # (batch_size, 1)
+                curr_state = output_dict["state"]
+                outputs.append(next_token.unsqueeze(1).cpu())
+            outputs = torch.cat(outputs, dim=1)  # (batch_size, max_length)
+
+        rollout_acc = 0.0
+        for output_seq, target_seq, question_len, answer_len in zip(
+            outputs,
+            batch["target"].cpu(),
+            batch["question_len"].cpu(),
+            batch["answer_len"].cpu(),
+        ):
+            target = "".join([
+                str(token.item())
+                for token in target_seq[question_len:question_len + answer_len]
+            ]) + f"{eos_token}"
+            pred = "".join([
+                str(token.item())
+                for token in output_seq[question_len:]
+            ])
+            acc = int(target in pred)
+            rollout_acc += acc / batch["input"].size(0)
+
+        return {
+            f"{CONST_ROLLOUT_ACCURACY}": rollout_acc,
+        }
+
     def validation(self, epoch: int) -> Dict[str, Any]:
         """
         Perform validation.
@@ -307,6 +398,15 @@ class NextTokenLearner:
 
                 tic = timeit.default_timer()
                 aux = self.train_step(batch, train=False)
+                if val_data["max_decode_len"] is not None:
+                    aux.update(
+                        self.rollout(
+                            batch=batch,
+                            max_length=val_data["max_decode_len"],
+                            eos_token=val_data["dataset"].eos_token,
+                            greedy_decoding=True,
+                        )
+                    )
                 total_update_time += timeit.default_timer() - tic
 
                 auxes.append(aux)
@@ -324,6 +424,7 @@ class NextTokenLearner:
                 f"time/val_{val_data_name}_{CONST_UPDATE_TIME}": total_update_time,
                 f"train/val_{val_data_name}_{CONST_AGG_LOSS}": auxes[CONST_AGG_LOSS],
                 f"train/val_{val_data_name}_{CONST_AGG_ACCURACY}": auxes[CONST_AGG_ACCURACY],
+                f"train/val_{val_data_name}_{CONST_ROLLOUT_ACCURACY}": auxes[CONST_ROLLOUT_ACCURACY],
                 **{
                     f"val-{val_data_name}-{CONST_LOSS_PER_CONTEXT}/{k}": v
                     for k, v in auxes[CONST_LOSS_PER_CONTEXT].items()
