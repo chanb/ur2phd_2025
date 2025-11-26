@@ -21,6 +21,7 @@ import src.datasets as datasets
 import src.models as models
 
 from src.constants import *
+from src.utils import parse_dict
 
 
 class NextTokenLearner:
@@ -38,10 +39,17 @@ class NextTokenLearner:
             config.dataset_config.train
         )
 
+        self._val_data = dict()
         if hasattr(config.dataset_config, "validation"):
-            self._val_dataset, self._val_dataset_loader = self.make_dataset_and_loader(
-                config.dataset_config.validation
-            )
+            for val_config in config.dataset_config.validation:
+                val_config = parse_dict(val_config)
+                curr_val_dataset, curr_val_dataset_loader = self.make_dataset_and_loader(
+                    val_config,
+                )
+                self._val_data[val_config.name] = {
+                    "dataset": curr_val_dataset,
+                    "loader": curr_val_dataset_loader,
+                }
 
         self._model, self._optimizer = self.make_model_and_optimizer()
 
@@ -166,18 +174,21 @@ class NextTokenLearner:
 
         return model.to(self.device), optimizer
 
-    def train_step(self, batch: Dict[str, torch.Tensor]) -> Any:
+    def train_step(self, batch: Dict[str, torch.Tensor], train: bool) -> Any:
         """
         A single training step.
         The learner should update model parameters based on the sampled batch here.
 
         :param batch: the batch
+        :param train: whether in training mode
         :type batch: Dict[str, torch.Tensor]
+        :type train: bool
         :return: the auxiliary information
         :rtype: Any
 
         """
-        output_dict = self.model(batch)
+        with torch.set_grad_enabled(train):
+            output_dict = self.model(batch)
         preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
         targets = batch["target"]  # (batch_size, seq_len)
         loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
@@ -189,10 +200,11 @@ class NextTokenLearner:
         loss = loss.view(targets.shape)  # (batch_size, seq_len)
         loss_mean = loss.mean()
 
-        # Take gradient step
-        self.optimizer.zero_grad()
-        loss_mean.backward()
-        self.optimizer.step()
+        if train:
+            # Take gradient step
+            self.optimizer.zero_grad()
+            loss_mean.backward()
+            self.optimizer.step()
 
         acc = (
             preds.argmax(dim=-1) == targets
@@ -226,6 +238,7 @@ class NextTokenLearner:
         total_update_time = 0
 
         tic = timeit.default_timer()
+        self.model.train()
         for batch_i, batch in enumerate(self._dataset_loader):
             # Put everything into the correct device
             batch = {
@@ -234,7 +247,7 @@ class NextTokenLearner:
             total_sample_time += timeit.default_timer() - tic
 
             tic = timeit.default_timer()
-            aux = self.train_step(batch)
+            aux = self.train_step(batch, train=True)
             total_update_time += timeit.default_timer() - tic
             assert np.isfinite(aux[CONST_AGG_LOSS].item()), f"Loss became NaN\naux: {aux}"
 
@@ -275,5 +288,50 @@ class NextTokenLearner:
 
         """
 
-        # TODO: Include validation logic
-        return {}
+        self.model.eval()
+        all_logs = dict()
+        for val_data_name, val_data in self._val_data.items():
+            val_dataset_loader = val_data["loader"]
+
+            auxes = []
+            total_sample_time = 0
+            total_update_time = 0
+
+            tic = timeit.default_timer()
+            for batch_i, batch in enumerate(val_dataset_loader):
+                # Put everything into the correct device
+                batch = {
+                    k: v.to(self.device) for k, v in batch.items()
+                }
+                total_sample_time += timeit.default_timer() - tic
+
+                tic = timeit.default_timer()
+                aux = self.train_step(batch, train=False)
+                total_update_time += timeit.default_timer() - tic
+
+                auxes.append(aux)
+
+                # This keeps track of batch sampling time
+                tic = timeit.default_timer()
+
+            auxes = torch.utils._pytree.tree_map(
+                lambda *args: np.mean([np.asarray(el) for el in args]),
+                *auxes,
+            )
+
+            log = {
+                f"time/val_{val_data_name}_{CONST_SAMPLE_TIME}": total_sample_time,
+                f"time/val_{val_data_name}_{CONST_UPDATE_TIME}": total_update_time,
+                f"train/val_{val_data_name}_{CONST_AGG_LOSS}": auxes[CONST_AGG_LOSS],
+                f"train/val_{val_data_name}_{CONST_AGG_ACCURACY}": auxes[CONST_AGG_ACCURACY],
+                **{
+                    f"val-{val_data_name}-{CONST_LOSS_PER_CONTEXT}/{k}": v
+                    for k, v in auxes[CONST_LOSS_PER_CONTEXT].items()
+                },
+                **{
+                    f"val-{val_data_name}-{CONST_ACCURACY_PER_CONTEXT}/{k}": v
+                    for k, v in auxes[CONST_ACCURACY_PER_CONTEXT].items()
+                },
+            }
+            all_logs.update(log)
+        return all_logs

@@ -29,7 +29,20 @@
             },
             "num_workers": 1,
             "batch_size": 32
-        }
+        },
+        "validation": [
+            {
+                "name": "heldout",
+                "dataset_name": "CopyDataset",
+                "kwargs": {
+                    "max_question_len": 10,
+                    "split": "val",
+                    "train_val_ratio": 0.8
+                },
+                "num_workers": 1,
+                "batch_size": 32
+            }
+        ]
     },
     "learner": "NextTokenLearner",
     "train_loss_config": {},
