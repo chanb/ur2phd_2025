@@ -3,6 +3,7 @@ from typing import Any
 
 import math
 import numpy as np
+import torch
 
 
 class CopyDataset(Dataset):
@@ -38,6 +39,15 @@ class CopyDataset(Dataset):
             self.instance_idxes = self.instance_idxes[self.num_train:]
         else:
             raise ValueError("No split {}".format(split))
+        
+        print(
+            "Initialized CopyDataset with num_instances={}, num_train={}, num_val={}, split={}".format(
+                self.num_instances,
+                self.num_train,
+                self.num_val,
+                split,
+            )
+        )
 
     def __len__(self) -> int:
         return len(self.instance_idxes)
@@ -59,8 +69,8 @@ class CopyDataset(Dataset):
         list_repr = list_repr + eos_pads
 
         return {
-            "input": list_repr[:-1],
-            "target": list_repr[1:],
+            "input": torch.tensor(list_repr[:-1]),
+            "target": torch.tensor(list_repr[1:]),
         }
 
     @property

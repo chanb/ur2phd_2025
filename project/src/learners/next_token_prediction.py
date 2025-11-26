@@ -177,8 +177,39 @@ class NextTokenLearner:
         :rtype: Any
 
         """
-        # TODO: Implement next-token prediction
-        return {CONST_AGG_LOSS: torch.tensor(0.0, device=self.device)}
+        output_dict = self.model(batch)
+        preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
+        targets = batch["target"]  # (batch_size, seq_len)
+        loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
+        loss = loss_fn(
+            preds.view(-1, self.dataset.vocab_size),
+            targets.view(-1),
+        )
+
+        loss = loss.view(targets.shape)  # (batch_size, seq_len)
+        loss_mean = loss.mean()
+
+        # Take gradient step
+        self.optimizer.zero_grad()
+        loss_mean.backward()
+        self.optimizer.step()
+
+        acc = (
+            preds.argmax(dim=-1) == targets
+        ).float().detach().cpu()
+
+        return {
+            CONST_AGG_LOSS: loss_mean.detach().cpu(),
+            CONST_AGG_ACCURACY: acc.mean(),
+            CONST_LOSS_PER_CONTEXT: {
+                f"{CONST_LOSS}-context_{context_i}": loss[:, context_i].mean().detach().cpu()
+                for context_i in range(loss.shape[1])
+            },
+            CONST_ACCURACY_PER_CONTEXT: {
+                f"{CONST_ACCURACY}-context_{context_i}": acc[:, context_i].mean()
+                for context_i in range(acc.shape[1])
+            },
+        }
 
     def update(self, epoch: int, *args, **kwargs) -> Dict[str, Any]:
         """
@@ -212,10 +243,24 @@ class NextTokenLearner:
             # This keeps track of batch sampling time
             tic = timeit.default_timer()
 
+        auxes = torch.utils._pytree.tree_map(
+            lambda *args: np.mean([np.asarray(el) for el in args]),
+            *auxes,
+        )
+
         log = {
             f"time/{CONST_SAMPLE_TIME}": total_sample_time,
             f"time/{CONST_UPDATE_TIME}": total_update_time,
-            # TODO: Insert logging information
+            f"train/{CONST_AGG_LOSS}": auxes[CONST_AGG_LOSS],
+            **{
+                f"train-{CONST_LOSS_PER_CONTEXT}/{k}": v
+                for k, v in auxes[CONST_LOSS_PER_CONTEXT].items()
+            },
+            f"train/{CONST_AGG_ACCURACY}": auxes[CONST_AGG_ACCURACY],
+            **{
+                f"train-{CONST_ACCURACY_PER_CONTEXT}/{k}": v
+                for k, v in auxes[CONST_ACCURACY_PER_CONTEXT].items()
+            },
         }
         return log
 

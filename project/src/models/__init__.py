@@ -7,3 +7,4 @@ parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
 from src.models.dummy import DummyModel
+from src.models.gru import DecoderGRU
