@@ -26,8 +26,7 @@
                 "train_max_digits": 3,
                 "test_max_digits": 6,
                 "split": "train",
-                "num_samples": 50000,
-                "seed": 0
+                "num_samples": 50000
             },
             "num_workers": 1,
             "batch_size": 32

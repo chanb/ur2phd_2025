@@ -163,6 +163,15 @@ class NextTokenLearner:
         model_kwargs.update(
             vocab_size=self.dataset.vocab_size
         )
+
+        pe_cls = model_kwargs.pop("pe_cls", False)
+        if pe_cls:
+            import src.models.pe as pe_module
+            pe_cls = getattr(pe_module, pe_cls)
+            model_kwargs["pe"] = pe_cls(
+                **model_kwargs,
+            )
+
         model = model_class(
             **model_kwargs,
         )

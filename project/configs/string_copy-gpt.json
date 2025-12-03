@@ -1,0 +1,82 @@
+{
+    "logging_config": {
+        "save_path": "./logs",
+        "experiment_name": "string_copy-gpt",
+        "log_interval": 1,
+        "checkpoint_interval": 25,
+        "validation_interval": 25
+    },
+    "model_config": {
+        "architecture": "DecoderTransformer",
+        "kwargs": {
+            "num_blocks": 2,
+            "embed_dim": 64,
+            "num_heads": 8,
+            "pe_cls": "NoPE"
+        }
+    },
+    "optimizer_config": {
+        "optimizer": "Adam",
+        "kwargs": {
+            "lr": 3e-4
+        }
+    },
+    "dataset_config": {
+        "train": {
+            "dataset_name": "CopyDataset",
+            "kwargs": {
+                "max_question_len": 10,
+                "split": "train",
+                "train_val_ratio": 0.8,
+                "exact_len": false
+            },
+            "num_workers": 1,
+            "batch_size": 32
+        },
+        "validation": [
+            {
+                "name": "heldout",
+                "dataset_name": "CopyDataset",
+                "kwargs": {
+                    "max_question_len": 10,
+                    "split": "val",
+                    "train_val_ratio": 0.8,
+                    "exact_len": false
+                },
+                "num_workers": 1,
+                "batch_size": 32,
+                "max_decode_len": 30
+            },
+            {
+                "name": "length_11",
+                "dataset_name": "CopyDataset",
+                "kwargs": {
+                    "max_question_len": 11,
+                    "split": "train",
+                    "train_val_ratio": 1.0,
+                    "exact_len": true
+                },
+                "num_workers": 1,
+                "batch_size": 32,
+                "max_decode_len": 30
+            },
+            {
+                "name": "length_12",
+                "dataset_name": "CopyDataset",
+                "kwargs": {
+                    "max_question_len": 12,
+                    "split": "train",
+                    "train_val_ratio": 1.0,
+                    "exact_len": true
+                },
+                "num_workers": 1,
+                "batch_size": 32,
+                "max_decode_len": 30
+            }
+        ]
+    },
+    "learner": "NextTokenLearner",
+    "train_loss_config": {},
+    "num_epochs": 1000,
+    "seed": 0
+}
