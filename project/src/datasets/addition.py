@@ -41,10 +41,12 @@ class AdditionDataset(Dataset):
         self.PLUS = 10
         self.EOS = 11
 
-        # Choose the number range based on split
+        # Choose the number range based on split, different digit ranges to avoid leakage
         if split == "train":
+            self.min_digits = 1
             self.max_digits = train_max_digits   # short lengths
         else:
+            self.min_digits = 1
             self.max_digits = test_max_digits    # longer lengths
 
         # Maximum sequence lengths for padding
@@ -56,13 +58,17 @@ class AdditionDataset(Dataset):
 
     def _sample_number(self, num_digits):
         """Sample a number uniformly from the allowed digit size."""
-        low = 10 ** (num_digits - 1)
-        high = 10 ** num_digits - 1
+        if num_digits == 1:
+            low = 0
+            high = 10
+        else:
+            low = 10 ** (num_digits - 1)
+            high = 10 ** num_digits
         return self.rng.randint(low, high)
 
     def __getitem__(self, idx: int) -> Any:
         # Randomly choose the digit-length for this instance
-        d = self.rng.randint(1, self.max_digits + 1)
+        d = self.rng.randint(self.min_digits, self.max_digits + 1)
 
         # Sample two numbers of chosen digit-length
         a = self._sample_number(d)
