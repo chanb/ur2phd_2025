@@ -13,7 +13,6 @@ from torch.utils.data import (
 from types import SimpleNamespace
 from typing import Any, Dict, Tuple
 
-import dill
 import numpy as np
 import timeit
 import torch
@@ -22,6 +21,7 @@ import src.datasets as datasets
 import src.models as models
 
 from src.constants import *
+from src.utils import parse_dict
 
 
 class NextTokenLearner:
@@ -39,10 +39,18 @@ class NextTokenLearner:
             config.dataset_config.train
         )
 
+        self._val_data = dict()
         if hasattr(config.dataset_config, "validation"):
-            self._val_dataset, self._val_dataset_loader = self.make_dataset_and_loader(
-                config.dataset_config.validation
-            )
+            for val_config in config.dataset_config.validation:
+                val_config = parse_dict(val_config)
+                curr_val_dataset, curr_val_dataset_loader = self.make_dataset_and_loader(
+                    val_config,
+                )
+                self._val_data[val_config.name] = {
+                    "dataset": curr_val_dataset,
+                    "loader": curr_val_dataset_loader,
+                    "max_decode_len": getattr(val_config, "max_decode_len", None),
+                }
 
         self._model, self._optimizer = self.make_model_and_optimizer()
 
@@ -167,19 +175,57 @@ class NextTokenLearner:
 
         return model.to(self.device), optimizer
 
-    def train_step(self, batch: Dict[str, torch.Tensor]) -> Any:
+    def train_step(self, batch: Dict[str, torch.Tensor], train: bool) -> Any:
         """
         A single training step.
         The learner should update model parameters based on the sampled batch here.
 
         :param batch: the batch
+        :param train: whether in training mode
         :type batch: Dict[str, torch.Tensor]
+        :type train: bool
         :return: the auxiliary information
         :rtype: Any
 
         """
-        # TODO: Implement next-token prediction
-        return {CONST_AGG_LOSS: torch.tensor(0.0, device=self.device)}
+        targets = batch["target"]  # (batch_size, seq_len)
+        loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
+
+        # TODO: We should really ignore the questions for NTP loss computation.
+        with torch.set_grad_enabled(train):
+            output_dict = self.model(batch)
+            preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
+            loss = loss_fn(
+                preds.view(-1, self.dataset.vocab_size),
+                targets.view(-1),
+            )
+
+            loss = loss.view(targets.shape)  # (batch_size, seq_len)
+            loss_mean = loss.mean()
+
+        if train:
+            # Take gradient step
+            self.optimizer.zero_grad()
+            loss_mean.backward()
+            self.optimizer.step()
+
+        acc = (
+            preds.argmax(dim=-1) == targets
+        ).float().detach().cpu()
+
+        # TODO: We should include gradient norm for logging.
+        return {
+            CONST_AGG_LOSS: loss_mean.detach().cpu(),
+            CONST_AGG_ACCURACY: acc.mean(),
+            CONST_LOSS_PER_CONTEXT: {
+                f"{CONST_LOSS}-context_{context_i}": loss[:, context_i].mean().detach().cpu()
+                for context_i in range(loss.shape[1])
+            },
+            CONST_ACCURACY_PER_CONTEXT: {
+                f"{CONST_ACCURACY}-context_{context_i}": acc[:, context_i].mean()
+                for context_i in range(acc.shape[1])
+            },
+        }
 
     def update(self, epoch: int, *args, **kwargs) -> Dict[str, Any]:
         """
@@ -196,6 +242,7 @@ class NextTokenLearner:
         total_update_time = 0
 
         tic = timeit.default_timer()
+        self.model.train()
         for batch_i, batch in enumerate(self._dataset_loader):
             # Put everything into the correct device
             batch = {
@@ -204,7 +251,7 @@ class NextTokenLearner:
             total_sample_time += timeit.default_timer() - tic
 
             tic = timeit.default_timer()
-            aux = self.train_step(batch)
+            aux = self.train_step(batch, train=True)
             total_update_time += timeit.default_timer() - tic
             assert np.isfinite(aux[CONST_AGG_LOSS].item()), f"Loss became NaN\naux: {aux}"
 
@@ -213,12 +260,117 @@ class NextTokenLearner:
             # This keeps track of batch sampling time
             tic = timeit.default_timer()
 
+        assert len(auxes) > 0, "No train data was provided."
+
+        auxes = torch.utils._pytree.tree_map(
+            lambda *args: np.mean([np.asarray(el) for el in args]),
+            *auxes,
+        )
+
         log = {
             f"time/{CONST_SAMPLE_TIME}": total_sample_time,
             f"time/{CONST_UPDATE_TIME}": total_update_time,
-            # TODO: Insert logging information
+            f"train/{CONST_AGG_LOSS}": auxes[CONST_AGG_LOSS],
+            **{
+                f"train-{CONST_LOSS_PER_CONTEXT}/{k}": v
+                for k, v in auxes[CONST_LOSS_PER_CONTEXT].items()
+            },
+            f"train/{CONST_AGG_ACCURACY}": auxes[CONST_AGG_ACCURACY],
+            **{
+                f"train-{CONST_ACCURACY_PER_CONTEXT}/{k}": v
+                for k, v in auxes[CONST_ACCURACY_PER_CONTEXT].items()
+            },
         }
         return log
+
+    def rollout(
+        self,
+        batch: Dict[str, torch.Tensor],
+        max_length: int,
+        eos_token: int,
+        greedy_decoding: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Perform autoregressive prediction upon receiving the question.
+
+        :param batch: the batch
+        :param max_length: the maximum length to decode
+        :param greedy_decoding: whether to use greedy decoding
+        :type batch: Dict[str, torch.Tensor]
+        :type max_length: int
+        :type greedy_decoding: bool
+        :return: the auxiliary information
+        :rtype: Dict[str, Any]
+        """
+
+        with torch.no_grad():
+            curr_state = self.model.init_state(batch)
+            curr_input = batch["input"][:, [0]]
+
+            dones = torch.zeros(
+                curr_input.size(0),
+                dtype=torch.bool,
+                device=self.device,
+            )
+            outputs = [dones.unsqueeze(1).cpu()]
+            max_prompt_length = batch["input"].size(1) - 1
+            for step_i in range(max_length):
+                output_dict = self.model({
+                    "input": curr_input,
+                    "state": curr_state,
+                })
+                preds = output_dict["output"]  # (batch_size, seq_len, vocab_size)
+
+                if greedy_decoding:
+                    next_token = preds[:, -1, :].argmax(dim=-1)  # (batch_size,)
+                else:
+                    raise ValueError("Only greedy decoding is supported currently.")
+
+                # Set next token to the ground truth if still in question part
+                next_token = torch.where(
+                    step_i + 1 < batch["question_len"],
+                    batch["input"][:, min(step_i + 1, max_prompt_length)],
+                    next_token,
+                )
+
+                dones = torch.logical_or(
+                    dones,
+                    next_token == eos_token,
+                )
+
+                next_token = torch.where(
+                    dones,
+                    torch.full_like(next_token, eos_token),
+                    next_token,
+                )
+
+                # Prepare for next step
+                curr_input = next_token.unsqueeze(1)  # (batch_size, 1)
+                curr_state = output_dict["state"]
+                outputs.append(next_token.unsqueeze(1).cpu())
+            outputs = torch.cat(outputs, dim=1)  # (batch_size, max_length)
+
+        rollout_acc = 0.0
+        for output_seq, target_seq, question_len, answer_len in zip(
+            outputs,
+            batch["target"].cpu(),
+            batch["question_len"].cpu(),
+            batch["answer_len"].cpu(),
+        ):
+            target = "".join([
+                str(token.item())
+                for token in target_seq[question_len:question_len + answer_len]
+            ]) + f"{eos_token}"
+            pred = "".join([
+                str(token.item())
+                for token in output_seq[question_len:]
+            ])
+            acc = int(target in pred)
+            rollout_acc += acc / batch["input"].size(0)
+
+        return {
+            f"{CONST_ROLLOUT_ACCURACY}": rollout_acc,
+        }
 
     def validation(self, epoch: int) -> Dict[str, Any]:
         """
@@ -231,5 +383,65 @@ class NextTokenLearner:
 
         """
 
-        # TODO: Include validation logic
-        return {}
+        self.model.eval()
+        all_logs = dict()
+        for val_data_name, val_data in self._val_data.items():
+            val_dataset_loader = val_data["loader"]
+
+            auxes = []
+            total_sample_time = 0
+            total_update_time = 0
+
+            tic = timeit.default_timer()
+            for batch_i, batch in enumerate(val_dataset_loader):
+                # Put everything into the correct device
+                batch = {
+                    k: v.to(self.device) for k, v in batch.items()
+                }
+                total_sample_time += timeit.default_timer() - tic
+
+                tic = timeit.default_timer()
+                aux = self.train_step(batch, train=False)
+                if val_data["max_decode_len"] is not None:
+                    aux.update(
+                        self.rollout(
+                            batch=batch,
+                            max_length=val_data["max_decode_len"],
+                            eos_token=val_data["dataset"].eos_token,
+                            greedy_decoding=True,
+                        )
+                    )
+                total_update_time += timeit.default_timer() - tic
+
+                auxes.append(aux)
+
+                # This keeps track of batch sampling time
+                tic = timeit.default_timer()
+
+            assert len(auxes) > 0, "No validation data was evaluated."
+
+            auxes = torch.utils._pytree.tree_map(
+                lambda *args: np.mean([np.asarray(el) for el in args]),
+                *auxes,
+            )
+
+            log = {
+                f"time/val_{val_data_name}_{CONST_SAMPLE_TIME}": total_sample_time,
+                f"time/val_{val_data_name}_{CONST_UPDATE_TIME}": total_update_time,
+                f"train/val_{val_data_name}_{CONST_AGG_LOSS}": auxes[CONST_AGG_LOSS],
+                f"train/val_{val_data_name}_{CONST_AGG_ACCURACY}": auxes[CONST_AGG_ACCURACY],
+                **{
+                    f"val-{val_data_name}-{CONST_LOSS_PER_CONTEXT}/{k}": v
+                    for k, v in auxes[CONST_LOSS_PER_CONTEXT].items()
+                },
+                **{
+                    f"val-{val_data_name}-{CONST_ACCURACY_PER_CONTEXT}/{k}": v
+                    for k, v in auxes[CONST_ACCURACY_PER_CONTEXT].items()
+                },
+            }
+
+            if CONST_ROLLOUT_ACCURACY in auxes:
+                log[f"train/val_{val_data_name}_{CONST_ROLLOUT_ACCURACY}"] = auxes[CONST_ROLLOUT_ACCURACY]
+
+            all_logs.update(log)
+        return all_logs

@@ -38,6 +38,7 @@ You have to install the two extra packages:
 ```
 pip install tensorboard
 pip install tqdm
+pip install ipdb # (Optional) I usually use this to debug my code
 ```
 
 ### Running the project
@@ -86,3 +87,10 @@ I have included some example Python files under `datasets`, `models`, and `learn
 
 **NOTE 1:** You have full freedom to modify this codebase, so long as everyone is aware of the modification (do this through a Pull Request and we will review it).  
 **NOTE 2:** The choices of the model architecture, learning objective, datasets, and metrics are open to discussion---I suggest asking for forgiveness after (it usually works out).
+
+The experiment logs are stored as `tensorboard` files. To view them, simply run:
+```
+tensorboard --logdir <PATH/TO/TENSORBOARD_FILES>
+```
+It will output a link, e.g., `http://localhost:6006/`, where you can view the learning curves.
+`tensorboard` can recursively find files so you can be a little bit more generous on where to specify the paths.
