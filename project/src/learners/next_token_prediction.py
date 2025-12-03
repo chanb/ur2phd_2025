@@ -260,6 +260,8 @@ class NextTokenLearner:
             # This keeps track of batch sampling time
             tic = timeit.default_timer()
 
+        assert len(auxes) > 0, "No train data was provided."
+
         auxes = torch.utils._pytree.tree_map(
             lambda *args: np.mean([np.asarray(el) for el in args]),
             *auxes,
@@ -416,6 +418,8 @@ class NextTokenLearner:
                 # This keeps track of batch sampling time
                 tic = timeit.default_timer()
 
+            assert len(auxes) > 0, "No validation data was evaluated."
+
             auxes = torch.utils._pytree.tree_map(
                 lambda *args: np.mean([np.asarray(el) for el in args]),
                 *auxes,
@@ -426,7 +430,6 @@ class NextTokenLearner:
                 f"time/val_{val_data_name}_{CONST_UPDATE_TIME}": total_update_time,
                 f"train/val_{val_data_name}_{CONST_AGG_LOSS}": auxes[CONST_AGG_LOSS],
                 f"train/val_{val_data_name}_{CONST_AGG_ACCURACY}": auxes[CONST_AGG_ACCURACY],
-                f"train/val_{val_data_name}_{CONST_ROLLOUT_ACCURACY}": auxes[CONST_ROLLOUT_ACCURACY],
                 **{
                     f"val-{val_data_name}-{CONST_LOSS_PER_CONTEXT}/{k}": v
                     for k, v in auxes[CONST_LOSS_PER_CONTEXT].items()
@@ -436,5 +439,9 @@ class NextTokenLearner:
                     for k, v in auxes[CONST_ACCURACY_PER_CONTEXT].items()
                 },
             }
+
+            if CONST_ROLLOUT_ACCURACY in auxes:
+                log[f"train/val_{val_data_name}_{CONST_ROLLOUT_ACCURACY}"] = auxes[CONST_ROLLOUT_ACCURACY]
+
             all_logs.update(log)
         return all_logs

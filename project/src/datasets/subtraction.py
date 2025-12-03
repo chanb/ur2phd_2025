@@ -3,6 +3,8 @@ from typing import Any
 
 import math
 import numpy as np
+import torch
+
 
 class SubtractionDataset(Dataset):
     """
@@ -100,6 +102,9 @@ class SubtractionDataset(Dataset):
             + r_bits
         )
 
+        question_len = len(a_bits) + 1 + len(b_bits)  # up to and including EQUAL
+        answer_len = len(r_bits) # result bits
+
         # Fixed length: 3*max_bits + 4 (simple padding rule)
         desired_len = 3 * self.max_bits + 4
 
@@ -110,9 +115,15 @@ class SubtractionDataset(Dataset):
         target_tokens = seq[1:]
 
         return {
-            "input": input_tokens,
-            "target": target_tokens,
+            "input": torch.tensor(input_tokens),
+            "target": torch.tensor(target_tokens),
+            "question_len": torch.tensor(question_len, dtype=torch.long),
+            "answer_len": torch.tensor(answer_len, dtype=torch.long),
         }
+
+    @property
+    def eos_token(self) -> Any:
+        return self.TOK_EOS
 
     @property
     def vocab_size(self):
