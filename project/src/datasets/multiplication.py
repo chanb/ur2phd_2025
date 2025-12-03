@@ -36,7 +36,7 @@ class MultiplicationDataset(Dataset):
         self.split = split
         self.num_samples = num_samples
         self.rng = np.random.RandomState(seed)
-        self.eos_token = eos_token
+        self._eos_token = eos_token
 
         # token mapping
         self.token_idx = {str(i): i for i in range(10)}
@@ -71,24 +71,31 @@ class MultiplicationDataset(Dataset):
         n = self.sample_integer(d)
         product = m * n
 
-        # tokenize
-        input_tokens = list(str(m)) + ["*"] + list(str(n)) + ["="] + [self.eos_token]
-        output_tokens = list(str(product)) + [self.eos_token]
-
-        # pad or truncate
-        input_tokens = input_tokens[:self.input_len] + [self.eos_token] * (self.input_len - len(input_tokens))
-        output_tokens = output_tokens[:self.output_len] + [self.eos_token] * (self.output_len - len(output_tokens))
+        input_tokens = list(str(m)) + ["*"] + list(str(n)) + ["="]
+        output_tokens = list(str(product))
+        question_len = len(input_tokens) - 1  # excludes '='
+        answer_len = len(output_tokens)
 
         # convert all tokens to their corresponding indices using self.token_idx
         input_list = [self.token_idx[token] for token in input_tokens]
         output_list = [self.token_idx[token] for token in output_tokens]
 
+        seq = input_list + output_list
+        seq = seq + [self.eos_token] * (
+            self.input_len + self.output_len - len(seq)
+        )  # add EOS at the end
+
         return {
-            "input": torch.tensor(input_list, dtype=torch.long),
-            "output":torch.tensor(output_list, dtype=torch.long),
-            "digits_used": d
+            "input": torch.tensor(seq[:-1], dtype=torch.long),
+            "target": torch.tensor(seq[1:], dtype=torch.long),
+            "digits_used": torch.tensor(d, dtype=torch.long),
+            "question_len": torch.tensor(question_len, dtype=torch.long),
+            "answer_len": torch.tensor(answer_len, dtype=torch.long),
         }
 
+    @property
+    def eos_token(self) -> Any:
+        return self.token_idx[self._eos_token]
 
     @property
     def vocab_size(self):
