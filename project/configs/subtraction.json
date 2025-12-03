@@ -1,0 +1,54 @@
+{
+  "logging_config": {
+    "save_path": "./logs",
+    "experiment_name": "subtraction-rnn",
+    "log_interval": 10,
+    "checkpoint_interval": 100,
+    "validation_interval": 10
+  },
+
+  "model_config": {
+    "architecture": "DecoderGRU",
+    "kwargs": {
+        "hidden_size": 64,
+        "num_gru_layers": 2
+    }
+  },
+
+  "optimizer_config": {
+    "optimizer": "Adam",
+    "kwargs": {
+      "lr": 3e-4
+    }
+  },
+
+  "dataset_config": {
+    "train": {
+      "dataset_name": "SubtractionDataset",
+      "batch_size": 32,
+      "num_workers": 1,
+      "kwargs": {
+        "max_bits": 8,
+        "split": "train"
+      }
+    },
+
+    "validation": [
+      {
+        "name": "heldout",
+        "dataset_name": "SubtractionDataset",
+        "batch_size": 32,
+        "num_workers": 1,
+        "kwargs": {
+          "max_bits": 8,
+          "split": "val"
+        }
+      }
+    ]
+  },
+
+  "learner": "NextTokenLearner",
+  "train_loss_config": {},
+  "num_epochs": 1000,
+  "seed": 0
+}

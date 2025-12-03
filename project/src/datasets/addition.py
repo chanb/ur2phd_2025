@@ -1,8 +1,8 @@
 from torch.utils.data import Dataset
 from typing import Any
-import math
-import numpy as np
 
+import numpy as np
+import torch
 
 class AdditionDataset(Dataset):
     """
@@ -97,11 +97,15 @@ class AdditionDataset(Dataset):
 
         # Shift like CopyDataset (next-token prediction)
         return {
-            "input": input_tokens[:-1],
-            "target": input_tokens[1:],
-            "sum_tokens": target_tokens,          # optional (for direct supervision)
-            "digits_used": d
+            "input": torch.tensor(input_tokens[:-1]),
+            "target": torch.tensor(input_tokens[1:]),
+            "sum_tokens": torch.tensor(target_tokens),          # optional (for direct supervision)
+            "digits_used": torch.tensor(d),
         }
+
+    @property
+    def eos_token(self) -> Any:
+        return self.EOS
 
     @property
     def vocab_size(self):

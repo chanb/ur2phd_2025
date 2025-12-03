@@ -7,8 +7,11 @@
         "validation_interval": 10
     },
     "model_config": {
-        "architecture": "DummyModel",
-        "kwargs": {}
+        "architecture": "DecoderGRU",
+        "kwargs": {
+            "hidden_size": 64,
+            "num_gru_layers": 2
+        }
     },
     "optimizer_config": {
         "optimizer": "Adam",
