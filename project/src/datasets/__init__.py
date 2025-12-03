@@ -8,5 +8,5 @@ sys.path.insert(0, parentdir)
 
 from src.datasets.dummy import DummyDataset
 from src.datasets.string_copy import CopyDataset
-
+from src.datasets.addition import AdditionDataset
 from src.datasets.subtraction import SubtractionDataset
