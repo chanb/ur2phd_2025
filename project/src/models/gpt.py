@@ -53,6 +53,7 @@ class DecoderTransformer(nn.Module):
         pe,
         widening_factor=4,
         dropout_p=0.1,
+        **kwargs,
     ):
         super(DecoderTransformer, self).__init__()
 
