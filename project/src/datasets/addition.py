@@ -4,6 +4,7 @@ from typing import Any
 import numpy as np
 import torch
 
+
 class AdditionDataset(Dataset):
     """
     Dataset for digit-wise addition designed specifically for length generalization.
@@ -18,7 +19,8 @@ class AdditionDataset(Dataset):
     Tokens:
         0–9 : digit tokens
         10  : '+'
-        11  : EOS
+        11  : '='
+        12  : EOS
     """
 
     def __init__(
@@ -39,7 +41,8 @@ class AdditionDataset(Dataset):
 
         # Tokens
         self.PLUS = 10
-        self.EOS = 11
+        self.EQUAL = 11
+        self.EOS = 12
 
         # Choose the number range based on split, different digit ranges to avoid leakage
         if split == "train":
@@ -80,27 +83,28 @@ class AdditionDataset(Dataset):
         b_digits = [int(x) for x in str(b)]
         s_digits = [int(x) for x in str(s)]
 
-        # Construct input: a + b + EOS + padding
         input_tokens = (
             a_digits +
             [self.PLUS] +
             b_digits +
-            [self.EOS]
+            [self.EQUAL]
         )
+        target_tokens = s_digits
+        question_len = len(input_tokens) - 1  # excludes '='
+        answer_len = len(target_tokens)
 
-        # Construct target: sum + EOS + padding
-        target_tokens = s_digits + [self.EOS]
-
-        # Pad to fixed lengths
-        input_tokens += [self.EOS] * (self.max_input_len - len(input_tokens))
-        target_tokens += [self.EOS] * (self.max_output_len - len(target_tokens))
+        seq = input_tokens + target_tokens
+        seq = seq + [self.eos_token] * (
+            self.max_input_len + self.max_output_len - len(seq)
+        )  # add EOS at the end
 
         # Shift like CopyDataset (next-token prediction)
         return {
-            "input": torch.tensor(input_tokens[:-1]),
-            "target": torch.tensor(input_tokens[1:]),
-            "sum_tokens": torch.tensor(target_tokens),          # optional (for direct supervision)
+            "input": torch.tensor(seq[:-1]),
+            "target": torch.tensor(seq[1:]),
             "digits_used": torch.tensor(d),
+            "question_len": torch.tensor(question_len, dtype=torch.long),
+            "answer_len": torch.tensor(answer_len, dtype=torch.long),
         }
 
     @property
@@ -109,8 +113,8 @@ class AdditionDataset(Dataset):
 
     @property
     def vocab_size(self):
-        # digits 0–9 + '+' + EOS
-        return 12
+        # digits 0–9 + '+' + '=' + EOS
+        return 13
 
 
 if __name__ == "__main__":

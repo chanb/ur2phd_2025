@@ -102,7 +102,7 @@ class SubtractionDataset(Dataset):
             + r_bits
         )
 
-        question_len = len(a_bits) + 1 + len(b_bits)  # up to and including EQUAL
+        question_len = len(a_bits) + 1 + len(b_bits)  # excludes EQUAL
         answer_len = len(r_bits) # result bits
 
         # Fixed length: 3*max_bits + 4 (simple padding rule)
